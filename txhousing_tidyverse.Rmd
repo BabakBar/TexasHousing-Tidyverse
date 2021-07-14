@@ -1,0 +1,269 @@
+---
+title: "The Texas housing market"
+author: "Babak Barghi"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  html_document:
+    toc: false
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    highlight: tango
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+The aim of this report is to take first steps in analyzing the dataset *txhousing*. The `txhousing` is a dataset included in the `tidyverse` package, containing information about the housing market in Texas provided by the TAMU real estate center, <https://www.recenter.tamu.edu/>.
+To import the data, first the previously mentioned packages are loaded by using the *library* function then several steps are carried out to check whether the data is correct.
+The analysis is carried out in *R 4.0.2*[1] and the *tidyverse*[2] package is used.
+
+```{r, message = FALSE}
+library("tidyverse")
+```
+
+At the first stage the dataset is imported by the name of *mydata*.
+In the next step of the data cleaning the beginning and end of the data set are viewed because there might be blank spaces in the beginning or end which could cause errors when analyzing. To view the beginning and end the *head* and *tail* functions are used. 
+
+```{r}
+txhousing <- as_tibble(txhousing)
+mydata <- txhousing
+
+#a look at first & last 15 observations
+head(mydata)
+tail(mydata)
+```
+
+From now on, the framework of analysis will be carried on according to the questions.
+
+# Dataset variables
+
+1. What is the temporal span of the dataset? What is the meaning and usefulness of the `date` variable?
+
+There are 3 variables in the dataframe regarding the time.
+* **year**
+* **month**
+* **date** 
+The column *date* here represent the continuous year variable. It means that for each year and month there is unique date value which can be useful to interpret the data more appropriately. In this case, for example, *sales* of each city can be analyzed based on the time series to see in which seasons there were higher or lower. 
+
+2. List the cities present in the dataset.
+
+```{r}
+unique(mydata$city)
+unique(mydata$city) %>% length()
+```
+
+It is shown than there are 46 cities in the dataset.
+
+3. What's the meaning of each of the variables describing the housing market (`sales`, `volume`, `median`, `listings`, `inventory`)?
+
+For this part the type of variables has to be checked. For that the *str* function is used.
+
+```{r}
+str(mydata)
+```
+
+* **sales:** Number of house sales
+* **volume:** Total value of sales
+* **median:** Median sale price
+* **listings:** Total active listings
+* **inventory:** Months inventory, amount of time it would take to sell all current listings at current pace of sales.
+Also the type of all this mentioned variables is numeric.
+
+# Missing data
+
+4. List the proportion of missing data for each variable describing the housing market for each city.
+
+```{r}
+any(is.na(mydata))                           #detect if there are any NAs
+sum(is.na(mydata))                           #number of missing values
+colnames(mydata)[colSums(is.na(mydata)) > 0] #which columns have missing values
+```
+
+As we can see from the result above, 4643 observations are missing and in particular we have five variables with missing values.
+Now we want to find the proportion of missing values for each variable based on each city.
+
+```{r, message=FALSE}
+missing.values.city <- mydata %>%
+    gather(key = "variable", value = "val", -city) %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(city, variable, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing)
+    
+missing.values.city
+```
+
+By this part we exactly see how many missing values each city has based on each variable.
+
+```{r, message=FALSE}
+missing.values.city %>% select(-variable) %>% group_by(city) %>% 
+  summarise(total.miss.percentage = (sum(num.missing)/1496)*100)
+```
+
+With this table we can easily see the proportion of missing data for each city.
+In the next part the table provide us with the total NA percent for each variable.
+
+```{r}
+na_percent <- sapply(mydata, function(y) sum(length(which(is.na(y))))/nrow(mydata)*100)
+na_percent <- data.frame(na_percent)
+na_percent
+```
+
+
+
+5. Plot the proportion of missing data for each variable describing the housing market for each year.
+
+```{r, message=FALSE}
+missing.values.year <- mydata %>%
+    gather(key = "variable", value = "val", -year) %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(year, variable, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing)
+    
+missing.values.year
+```
+```{r, message=FALSE}
+missing.values.year <- missing.values.year %>% 
+  select(-variable) %>% group_by(year) %>% 
+  summarise(total.miss.percenatge = (sum(num.missing)/1496)*100)
+missing.values.year
+```
+
+A bar graph is plotted to demostrate the proportion of missing data for each year.
+
+```{r}
+ggplot(missing.values.year, aes(x=year, y=total.miss.percenatge)) + 
+  geom_bar(stat = "identity", width=0.4) +
+  scale_x_continuous(breaks = seq(2000, 2015, by=1)) +
+  scale_y_continuous(n.breaks = 10) +
+  coord_flip()
+  
+```
+
+
+6. For which temporal span do we have a significant amount of data? Your answer must be based on evidence obtained in the previous question.
+
+It is obvious by the chart that from the year 2009 the provided data contain less than 10 percent missing values. In this case the temporal span would be chosen between *2009* and *2015*.
+
+
+# Describing the market
+
+As it was mentioned there are many cases with NA’s in the data frame. We will have to resolve this problem in terms of a proper Data Analysis. Cleaning (omit) will be done using the *na.omit* function.
+```{r}
+#delete the NA's
+mydata <- na.omit(mydata)
+```
+
+For the remaining questions, we consider using the temporal span from 2009 to 2015 found in question 6.
+
+7. Plot the evolution of total sales in the whole Texas.
+
+The evoulution of total sales will be illustrated using a line graph as follow.
+
+```{r, message=FALSE}
+mydata %>% filter(year > 2008) %>% group_by(date) %>% 
+  summarize(N = n(), total_sales = sum(sales)) %>%
+  ggplot(aes(x=date, y = total_sales)) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(2009, 2015, by=1)) +
+  scale_y_continuous(n.breaks = 10)
+
+```
+
+8. What are the cities with the largest market? And the cities with the most expensive housing? Show evidence of your answer through plots or data manipulation.
+
+For the largest market we calculate total volume for each city.
+
+```{r, message=FALSE}
+mydata2 <- mydata %>% filter(year > 2008) %>% 
+  group_by(city) %>% summarize(largest_market = sum(volume)) %>% 
+  arrange(desc(largest_market))
+
+head(mydata2, n = 8)
+
+mydata2 %>% top_n(6) %>%
+ggplot(aes(x=city, y=largest_market)) + 
+    geom_point(size = 4)
+```
+
+For the most expensive cities we compare median sales price.
+
+```{r, message=FALSE}
+mydata3 <- mydata %>% filter(year > 2008) %>% 
+  group_by(city) %>% summarize(expensive = sum(median)) %>% 
+  arrange(desc(expensive))
+
+head(mydata3, n = 8)
+
+mydata3 %>% top_n(6) %>%
+ggplot(aes(x=city, y=expensive)) + 
+    geom_point(size = 4)
+```
+
+
+# Examining the market
+
+9. Examine the difference between mean price and median price. What does this difference mean, regarding the distribution of house prices?
+
+A mean is computed by adding up all the values and dividing that score by the number of values. However, the Median is the number found at the exact middle of the ordered set of values. In this case we can calculate the mean prices using the volume and sales variables.
+```{r, message=FALSE}
+mydata4 <- mydata %>% filter(year > 2008) %>% 
+  mutate(mean = volume/sales) %>% 
+  select(city, mean, median) %>% group_by(city) %>% 
+  summarise(total.mean = sum(mean), total.median = sum(median))
+
+ggplot(mydata4, aes(x=total.mean, y=total.median)) +
+  geom_point()
+
+```
+
+It is clear that there is a correlation between the mean and median regarding the price distribution. As the mean increases the median also rises according to the graph.
+
+10. What is the relationship between housing supply and prices in the Texas housing market? Maybe you want to examine the market as a whole, or the most important cities.
+
+With the same approach like the previous question we compare listing & median in this part.
+```{r, message=FALSE}
+mydata5 <- mydata %>% filter(year > 2008) %>% 
+  select(city, listings, median) %>% group_by(city) %>% 
+  summarise(total.listings = sum(listings), total.median = sum(median))
+
+ggplot(mydata5, aes(x=total.listings, y=total.median)) +
+  geom_point()
+
+```
+
+We can see that even when the listing increases substantially in some cities the median prices would not change dramatically compare to the market as a whole.
+
+11. Do you think that a high value of months of `inventory` can trigger a decrease of prices? (maybe there is a lag between the cause and the effect). Try to visualise this relationship.
+
+Again with the same approach we compare inventory vs median in this part.
+
+```{r, message=FALSE}
+mydata6 <- mydata %>% filter(year > 2008) %>% 
+  select(city, inventory, median) %>% group_by(city) %>% 
+  summarise(total.inventory = sum(inventory), total.median = sum(median))
+
+ggplot(mydata6, aes(x=total.inventory, y=total.median)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", se=TRUE)
+
+```
+
+By using a linear line, we can easily see that high value of inventory could have an effect of the prices but the market in total in way more complicated rather than only this issue. Many factors can contribute to the prices in different cities, however inventory and demands are highly correlated to the price in the housing market.
+
+# References
+
+[1] R Core Team (2019). R: A language and environment for statistical
+computing. R Foundation for Statistical Computing, Vienna, Austria.
+URL https://www.R-project.org/.
+
+[2] Wickham et al., (2019). Welcome to the tidyverse. Journal of Open
+Source Software, 4(43), 1686, https://doi.org/10.21105/joss.01686 
